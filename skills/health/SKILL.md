@@ -31,5 +31,5 @@ spo2_data / training_readiness / training_status / max_metrics；`garmin.activit
 ## 注意
 
 - 睡眠记在醒来那天（`garmin.day.day` = 起床日期）。
-- 当天数据不完整，同步每小时跑一次；做趋势时排除今天。
+- 当天数据不完整，每天早上同步一次；做趋势时排除今天。
 - 分析时给出数字和样本天数，别下医学诊断。
