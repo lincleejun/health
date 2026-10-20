@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+sync.log
+.env.bak-local
+backfill.log
+.DS_Store

@@ -1,0 +1,9 @@
+[project]
+name = "health"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "garminconnect>=0.3.19",
+    "mcp>=2.3.0",
+    "psycopg[binary]>=3.3.6",
+]

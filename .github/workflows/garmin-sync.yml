@@ -1,0 +1,26 @@
+# 每天把 Garmin 数据同步到 Neon。登录 token 存在数据库 public.garmin_token，运行时读出、续期后写回。
+name: garmin-sync
+
+on:
+  schedule:
+    - cron: "0 15 * * *" # 每天 08:00 PDT / 07:00 PST（GitHub 定时可能延迟几分钟到几十分钟）
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "从这一天开始重拉（YYYY-MM-DD），留空为增量"
+        required: false
+
+concurrency: garmin-sync # 两次运行不能同时续期 token
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run health.py garmin-sync ${SINCE:+--since "$SINCE"}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HEALTH_TZ: America/Los_Angeles
+          SINCE: ${{ inputs.since }}

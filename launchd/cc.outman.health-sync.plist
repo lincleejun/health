@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>cc.outman.health-sync</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/outman/.local/bin/uv</string>
+    <string>--directory</string><string>/Users/outman/workspace/personal/health</string>
+    <string>run</string><string>health.py</string><string>garmin-sync</string>
+  </array>
+  <key>StartInterval</key><integer>3600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/Users/outman/workspace/personal/health/sync.log</string>
+  <key>StandardErrorPath</key><string>/Users/outman/workspace/personal/health/sync.log</string>
+</dict>
+</plist>
