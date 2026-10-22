@@ -8,18 +8,18 @@ import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { mcp } from "@better-auth/mcp";
 import { pool } from "./db";
 
-// 只有一个用户：库里还没有人时允许注册，之后注册一律关闭。
+// Single user: sign-up is allowed only while the database has no users, then closed for good.
 async function signupGate() {
   const r = await pool.query('SELECT count(*)::int AS n FROM "user"');
-  if (r.rows[0].n > 0) throw new APIError("FORBIDDEN", { message: "已关闭注册" });
+  if (r.rows[0].n > 0) throw new APIError("FORBIDDEN", { message: "Sign-up is closed" });
 }
 
-// 部署在 Vercel 时用项目的正式域名；本地用 .env.local 里的地址
+// On Vercel use the project's production domain; locally use the URL from .env.local
 const baseURL =
   process.env.BETTER_AUTH_URL ??
   (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined);
 
-// MCP 端点的资源标识，AI 助手拿到的令牌只对它有效
+// Resource identifier of the MCP endpoint; tokens issued to AI assistants are valid only for it
 export const MCP_RESOURCE = `${baseURL ?? "http://localhost:3000"}/api/mcp`;
 
 export const auth = betterAuth({
@@ -34,13 +34,13 @@ export const auth = betterAuth({
   plugins: [
     apiKey(),
     jwt(),
-    // 让 ChatGPT、Claude 等通过 OAuth 连接 /api/mcp：跳到登录页，再到授权页由用户确认
+    // Let ChatGPT, Claude, etc. connect to /api/mcp via OAuth: redirect to sign-in, then to the consent page for the user to approve
     mcp({
       loginPage: "/sign-in",
       consentPage: "/consent",
       resource: MCP_RESOURCE,
       scopes: ["openid", "profile", "offline_access", "health:read"],
-      // 多数客户端仍用动态注册（DCR）；注册只是登记一个客户端，访问数据仍要用户登录并同意
+      // Most clients still use dynamic client registration (DCR); registering only records a client — reading data still requires the user to sign in and consent
       allowDynamicClientRegistration: true,
       allowUnauthenticatedClientRegistration: true,
     }),

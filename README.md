@@ -1,62 +1,127 @@
 # health
 
-个人健康数据库：可穿戴设备数据 → 云端 Postgres（Neon）→ 只读 MCP，给 ChatGPT / Codex / Claude 做分析。
+Your Garmin data in a Postgres database you own, exposed to AI assistants (ChatGPT, Claude, Claude Code, Codex) through a read-only MCP server. Ask questions in plain language and the assistant writes the SQL.
 
+```mermaid
+flowchart LR
+  G[Garmin Connect] -- worker syncs every 6h --> DB[(Postgres)]
+  DB -- read-only role --> W[web: /api/mcp]
+  W -- OAuth --> C[ChatGPT / Claude.ai]
+  W -- access token --> A[Claude Code / Codex / other agents]
 ```
-GitHub Action 每天 ──garmin-sync──▶ Neon Postgres ◀──只读── web/（Vercel，/api/mcp，OAuth）◀── ChatGPT / Claude
-                                        ▲
-                                        └──只读── health.py mcp（stdio）◀── Codex / Claude Code
-```
 
-- 网页与云端 MCP：https://health-gules-omega.vercel.app ，代码在 `web/`（Next.js + Better Auth，做法同 medcabin）。
-- 查询随时可用；Garmin 数据每天由 GitHub Action 同步一次，不依赖本机。
-- 本机 Docker Postgres（`docker-compose.yml`）保留作离线备份/开发用；`.env` 里设了 `DATABASE_URL` 就走 Neon。
+## What it's for
 
-现在接入：Garmin（`python-garminconnect`，非官方接口）。计划：Oura（官方 OAuth，PAT 已于 2025-12 停用）、饮食。
+- "How has my resting heart rate trended over the last 3 months?"
+- "Do I sleep worse on days with high stress or late workouts?"
+- "Compare my HRV in weeks with 3+ runs vs. weeks with fewer."
+- "Give me a weekly recovery report: sleep, body battery, training readiness."
+- "Which hours of the day am I most stressed on workdays?"
 
-## 起步
+Everything runs on your machine. The assistant can only read; it cannot change or delete anything.
+
+## Data
+
+Synced from Garmin Connect each day (11 daily endpoints, plus activities):
+
+| View | Granularity | Contents |
+|---|---|---|
+| `garmin.day` | daily | steps, distance, calories, resting/min/max HR, stress, body battery, intensity minutes, floors, SpO2, sleep duration/stages/score, HRV, training readiness |
+| `garmin.halfday` | AM / PM | heart rate, stress, body battery, steps, respiration |
+| `garmin.hourly` | hourly | same as above |
+| `garmin.sample` | raw samples | `(ts, metric, value)`: heart rate (~2 min), stress (3 min), body battery, steps (15 min), respiration |
+| `garmin.activities` | per workout | type, duration, distance, HR, training effect, load |
+
+- Raw API responses are stored unchanged as `jsonb` in `garmin.daily(metric, day, data)` and `garmin.activity(id, start_time, data)`. The views above are projections, so new Garmin fields need no migration.
+- Schema: [`db/schema.sql`](db/schema.sql). Agent guide: [`skills/health/SKILL.md`](skills/health/SKILL.md).
+- Each sync re-fetches the last 2 days (watches upload late), plus any day in the last 14 that is still missing wellness data. The first sync backfills 30 days; pick an earlier date on the home page to backfill more.
+- Times use the database timezone, taken from your browser when you connect Garmin.
+
+**Privacy and safety**
+- Your Garmin password is used once to obtain a login token and is never stored. The token lives in the database, in a table the read-only role cannot see.
+- AI assistants query as `health_ro`: read-only transactions, a 30 s statement timeout, and no access to the login, session, or token tables.
+- Postgres is not exposed outside Docker, and the web app listens on `127.0.0.1` only. All passwords and secrets are randomly generated on first start.
+
+## Install
+
+### With a coding agent (recommended)
+
+Give your coding agent (Claude Code, Codex, Cursor, …) this prompt:
+
+> Clone https://github.com/lincleejun/health and install it by following INSTALL.md.
+
+[INSTALL.md](INSTALL.md) is written for agents: it checks prerequisites, starts the stack, verifies it, fixes common problems, and tells you what to click.
+
+### By hand
+
+Requires Docker (Docker Desktop, OrbStack, or Docker Engine with Compose v2).
 
 ```bash
-docker compose up -d          # Postgres 17，127.0.0.1:5433，数据在 volume pgdata
-uv run health.py init-db      # 建表/视图/只读账号，可重复运行
-uv run health.py garmin-login # 一次即可，token 存在 ~/.garminconnect
-uv run health.py garmin-sync --since 2025-01-01   # 回补历史
+git clone https://github.com/lincleejun/health.git && cd health
+docker compose up -d
 ```
 
-`.env`（已 gitignore）：`PGPASSWORD`、`PG_RO_PASSWORD`、`HEALTH_TZ`。
+The first build takes a few minutes. Then open http://localhost:3000 and:
 
-## 定时同步
+1. **Sign up.** The first account becomes the owner, and sign-up closes after that.
+2. **Connect Garmin** with your Garmin email and password. Two-factor codes are supported.
+3. **Create an access token** and connect your AI assistant (see below).
 
-GitHub Action（`.github/workflows/garmin-sync.yml`）每天 15:00 UTC（洛杉矶早上 7–8 点）跑 `garmin-sync`，不依赖本机。
-增量规则：重拉最近 2 天，并从近 14 天里最早一个还没有日常数据的日子补起。
+No configuration is needed. Optional settings go in a `.env` file next to `docker-compose.yml`:
 
-- 唯一的 secret：`DATABASE_URL`（Neon owner 连接串）。
-- Garmin token 存在 Neon 的 `public.garmin_token`（只读账号读不到），每次运行读出、续期后写回，不需要账号密码。
-- token 失效（Action 报认证错误）时，在本机运行 `uv run health.py garmin-login`，然后
-  `psql "$DATABASE_URL" -c "delete from public.garmin_token"`，再跑一次 `uv run health.py garmin-sync`，新 token 会自动写进库里。
-- 手动补数据：Actions 页面 → garmin-sync → Run workflow，填 since 日期。
-- 旧的本机 launchd 任务（`launchd/`）已停用，留作备用；不要和 Action 同时启用，两边都会续期 token。
+| Variable | Default | Purpose |
+|---|---|---|
+| `HEALTH_PORT` | `3000` | Local port (bound to 127.0.0.1) |
+| `PUBLIC_URL` | `http://localhost:3000` | Public HTTPS URL, needed for ChatGPT / Claude.ai |
+| `SYNC_INTERVAL_HOURS` | `6` | How often to sync Garmin |
 
-## 数据
+## Connect an AI assistant
 
-- 原始响应：`garmin.daily(metric, day, data jsonb)`、`garmin.activity(id, start_time, data jsonb)`
-- 分析视图：`garmin.day` / `garmin.halfday` / `garmin.hourly` / `garmin.sample` / `garmin.activities`
-- 结构在 `db/schema.sql`；给 agent 的说明在 `skills/health/SKILL.md`
+**Claude Code, Codex, and other local agents.** Create a token on the home page. The page shows a ready-to-paste command:
 
-## 接入 ChatGPT
+```bash
+claude mcp add --transport http health http://localhost:3000/api/mcp --header "Authorization: Bearer <token>"
+```
 
-1. 先打开网页注册（只有第一个账号有效，之后自动关闭注册）。
-2. ChatGPT → Plugins（或 设置 → 应用与连接器）→ “+” → Add custom MCP server。
-3. Connection 选公网地址：`https://health-gules-omega.vercel.app/api/mcp`，认证选 OAuth（动态注册），确认风险提示，Create。
-4. 跳到登录页登录 → 授权页勾选“查看健康数据” → 允许。之后在对话里 @ 它提问。
+Or skip tokens and use stdio through Docker:
 
-Claude.ai 同理：设置 → Connectors → 添加自定义连接器，填同一个地址。
+```bash
+claude mcp add health -- docker compose -f /path/to/health/docker-compose.yml exec -T worker entrypoint.sh python health.py mcp
+```
 
-## 接入本地 agent
+**ChatGPT and Claude.ai** connect from the cloud, so they need a public HTTPS URL that forwards to port 3000. A reverse proxy, Cloudflare Tunnel, or Tailscale Funnel all work. Then restart with that URL:
 
-MCP（stdio，用只读账号 `health_ro`，数据库层禁止写入）：工具 `schema()`、`query(sql)`。
+```bash
+PUBLIC_URL=https://health.example.com docker compose up -d
+```
 
-- Codex：`~/.codex/config.toml` 里 `[mcp_servers.health]`
-- Claude Code：`claude mcp add -s user health -- uv --directory <本目录> run health.py mcp`
+- **ChatGPT:** Settings → Apps & Connectors → add a custom MCP server. Use URL `https://health.example.com/api/mcp` with OAuth, then sign in and allow "View health data".
+- **Claude.ai:** Settings → Connectors → add a custom connector with the same URL.
 
-也可以走云端 MCP：在网页首页新建访问令牌，`claude mcp add --transport http health https://health-gules-omega.vercel.app/api/mcp --header "Authorization: Bearer <令牌>"`。
+The MCP server has two tools: `schema()` lists tables and views with descriptions, and `query(sql)` runs read-only SQL.
+
+## Operate
+
+```bash
+docker compose logs -f worker                                   # sync logs
+docker compose up -d --build                                    # update after git pull
+docker compose exec db pg_dump -U health health > backup.sql    # back up
+docker compose down                                             # stop (data is kept in the "db" volume)
+```
+
+## Alternative deployment: Vercel + Neon + GitHub Actions
+
+This setup needs no always-on machine:
+
+- **Database:** Neon. Put `DATABASE_URL` (owner) and `DATABASE_URL_RO` (`health_ro`) in `.env`, and optionally `HEALTH_TZ`. Run `uv run health.py init-db`, then `cd web && npm run db:init`.
+- **Web:** deploy `web/` to Vercel with `DATABASE_URL`, `DATABASE_URL_RO`, and `BETTER_AUTH_SECRET`. Leave `WORKER_URL` unset; the Garmin section on the home page is then hidden.
+- **Garmin login:** run `uv run health.py garmin-login` locally. The token is saved to the database. Run it again if the token ever expires.
+- **Sync:** [`.github/workflows/garmin-sync.yml`](.github/workflows/garmin-sync.yml) runs daily at 15:00 UTC with one secret, `DATABASE_URL`. To backfill, go to Actions → garmin-sync → Run workflow and enter a `since` date.
+- **Local stdio MCP:** `claude mcp add -s user health -- uv --directory /path/to/health run health.py mcp`.
+
+## Notes
+
+- Garmin access uses the unofficial [`python-garminconnect`](https://github.com/cyberjunky/python-garminconnect) library. Garmin may change or rate-limit it.
+- Single user per installation.
+- Not medical advice. The assistant is told to report numbers and sample sizes, not diagnoses.
+- Planned: Oura, nutrition.

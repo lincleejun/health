@@ -1,5 +1,5 @@
-// Better Auth 的表（user、session、apikey、oauth…）建在 public；健康数据的 schema 和只读账号由 ../health.py init-db 负责。可重复运行。
+// Better Auth tables (user, session, apikey, oauth…) live in public; the health data schemas and read-only role are handled by ../health.py init-db. Safe to rerun.
 import { execSync } from "node:child_process";
 
 execSync("npx auth@latest migrate --yes", { stdio: "inherit" });
-console.log("登录相关的表已就绪");
+console.log("Auth tables are ready");

@@ -1,16 +1,16 @@
--- 可重复运行：uv run health.py init-db
--- 原则：原始 JSON 原样落库（data jsonb），分析用的列由视图投影，接口加字段不需要迁移。
+-- Idempotent: uv run health.py init-db
+-- Principle: store raw JSON as-is (data jsonb) and project analysis columns in views, so new API fields need no migration.
 
 CREATE SCHEMA IF NOT EXISTS garmin;
 
--- Garmin 登录 token（含 refresh token），放在 public：只读账号 health_ro 没有 public 的权限
+-- Garmin login token (incl. refresh token). Lives in public because the read-only role health_ro has no access to public
 CREATE TABLE IF NOT EXISTS public.garmin_token (
   id         int         PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   data       text        NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 每天每个指标一份原始响应，metric = garminconnect 的方法名去掉 get_
+-- One raw response per metric per day; metric = garminconnect method name without the get_ prefix
 CREATE TABLE IF NOT EXISTS garmin.daily (
   metric     text        NOT NULL,
   day        date        NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS garmin.activity (
   fetched_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 日内采样，统一成 (ts, metric, value)。Garmin 用 -1/-2 表示未测到压力，过滤掉。
+-- Intraday samples normalized to (ts, metric, value). Garmin uses -1/-2 for unmeasured stress; filter those out.
 CREATE OR REPLACE VIEW garmin.sample AS
 SELECT to_timestamp((v->>0)::bigint / 1000.0) AS ts, 'hr' AS metric, (v->>1)::numeric AS value
   FROM garmin.daily d, jsonb_array_elements(d.data->'heartRateValues') v
@@ -47,7 +47,7 @@ UNION ALL
 SELECT to_timestamp((v->>0)::bigint / 1000.0), 'respiration', (v->>1)::numeric
   FROM garmin.daily d, jsonb_array_elements(d.data->'respirationValuesArray') v
  WHERE d.metric = 'respiration_data' AND jsonb_typeof(d.data->'respirationValuesArray') = 'array' AND (v->>1)::numeric > 0;
-COMMENT ON VIEW garmin.sample IS '日内原始采样：hr(约2分钟) / stress(3分钟) / body_battery / steps(15分钟) / respiration。ts 为 timestamptz。';
+COMMENT ON VIEW garmin.sample IS 'Raw intraday samples: hr (~2 min) / stress (3 min) / body_battery / steps (15 min) / respiration. ts is timestamptz.';
 
 CREATE OR REPLACE VIEW garmin.hourly AS
 SELECT date_trunc('hour', ts) AS hour,
@@ -60,7 +60,7 @@ SELECT date_trunc('hour', ts) AS hour,
        sum(value)       FILTER (WHERE metric = 'steps')         AS steps,
        round(avg(value) FILTER (WHERE metric = 'respiration'), 1) AS respiration_avg
   FROM garmin.sample GROUP BY 1;
-COMMENT ON VIEW garmin.hourly IS '按小时聚合（数据库时区）。';
+COMMENT ON VIEW garmin.hourly IS 'Hourly aggregates (database timezone).';
 
 CREATE OR REPLACE VIEW garmin.halfday AS
 SELECT ts::date AS day,
@@ -74,7 +74,7 @@ SELECT ts::date AS day,
        sum(value)       FILTER (WHERE metric = 'steps')         AS steps,
        round(avg(value) FILTER (WHERE metric = 'respiration'), 1) AS respiration_avg
   FROM garmin.sample GROUP BY 1, 2;
-COMMENT ON VIEW garmin.halfday IS '按上午(0-12点)/下午(12-24点)聚合（数据库时区）。';
+COMMENT ON VIEW garmin.halfday IS 'Aggregates by morning (AM, 00-12h) / afternoon (PM, 12-24h), database timezone.';
 
 CREATE OR REPLACE VIEW garmin.day AS
 SELECT s.day,
@@ -106,7 +106,7 @@ SELECT s.day,
   LEFT JOIN garmin.daily h  ON h.metric  = 'hrv_data'           AND h.day  = s.day
   LEFT JOIN garmin.daily r  ON r.metric  = 'training_readiness' AND r.day  = s.day
  WHERE s.metric = 'user_summary';
-COMMENT ON VIEW garmin.day IS '每日汇总：活动、静息心率、压力、身体电量、睡眠(以醒来那天计)、HRV、训练准备度。';
+COMMENT ON VIEW garmin.day IS 'Daily summary: activity, resting HR, stress, body battery, sleep (attributed to the wake-up day), HRV, training readiness.';
 
 CREATE OR REPLACE VIEW garmin.activities AS
 SELECT id, start_time,
@@ -120,4 +120,4 @@ SELECT id, start_time,
        (data->>'aerobicTrainingEffect')::numeric AS aerobic_te,
        (data->>'activityTrainingLoad')::numeric  AS training_load
   FROM garmin.activity;
-COMMENT ON VIEW garmin.activities IS '运动记录（跑步、骑行、力量等）。';
+COMMENT ON VIEW garmin.activities IS 'Workouts (running, cycling, strength, etc.).';

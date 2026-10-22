@@ -1,12 +1,12 @@
 import { Pool, types } from "pg";
 
-// 两个连接池：owner 给 Better Auth（用户、会话、令牌表在 public）；
-// health_ro 给 MCP 的 query 工具，只能读 garmin 等数据 schema，读不到 public 里的令牌。
+// Two pools: owner for Better Auth (user, session, and token tables live in public);
+// health_ro for the MCP query tool, which can read only data schemas like garmin, not the tokens in public.
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 3 });
 
-// 只对只读池：date / timestamp / timestamptz 原样返回 Postgres 的字符串（带本地时区偏移），
-// 否则 2026-10-19 会变成 2026-10-19T07:00:00.000Z，AI 容易读错。
-// 不能用全局 types.setTypeParser：Better Auth 需要 Date 对象。
+// Read-only pool only: return date / timestamp / timestamptz as Postgres's raw strings (with local UTC offset);
+// otherwise 2026-10-19 becomes 2026-10-19T07:00:00.000Z and the AI easily misreads it.
+// Can't use the global types.setTypeParser: Better Auth needs Date objects.
 const RAW = new Set([1082, 1114, 1184]);
 export const roPool = new Pool({
   connectionString: process.env.DATABASE_URL_RO,

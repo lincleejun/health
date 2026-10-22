@@ -1,0 +1,9 @@
+.git
+**/.env*
+**/node_modules
+.venv
+*.log
+launchd
+web/.next
+web/.vercel
+web/tsconfig.tsbuildinfo

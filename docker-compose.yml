@@ -1,16 +1,67 @@
+# Works out of the box: docker compose up -d, then open http://localhost:3000
+# Passwords and secrets are generated randomly on first start and stored in the secrets volume; no configuration needed.
+# Optional (set before the command or in .env in this directory):
+#   HEALTH_PORT          host port, default 3000
+#   PUBLIC_URL           public URL, e.g. https://health.example.com (needed for ChatGPT / Claude.ai)
+#   SYNC_INTERVAL_HOURS  Garmin sync interval, default 6
 services:
+  secrets:
+    image: postgres:17-alpine
+    command: [sh, -c, 'cd /secrets && for f in pg_password ro_password auth_secret; do [ -s $$f ] || head -c 48 /dev/urandom | base64 | tr -dc A-Za-z0-9 > $$f; done']
+    volumes:
+      - secrets:/secrets
+
   db:
-    image: postgres:17
-    container_name: health-db
+    image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: ${PGPASSWORD}
       POSTGRES_DB: health
-    ports:
-      - "127.0.0.1:5433:5432"
+      POSTGRES_PASSWORD_FILE: /secrets/pg_password
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - db:/var/lib/postgresql/data
+      - secrets:/secrets:ro
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, health, -d, health] # use TCP: the temporary server during first init only listens on the socket
+      interval: 2s
+      retries: 30
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    restart: unless-stopped
+    environment:
+      SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-6}
+    volumes:
+      - secrets:/secrets:ro
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 2s
+      retries: 30
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HEALTH_PORT:-3000}:3000"
+    environment:
+      BETTER_AUTH_URL: ${PUBLIC_URL:-http://localhost:${HEALTH_PORT:-3000}}
+      WORKER_URL: http://worker:8000
+    volumes:
+      - secrets:/secrets:ro
+    depends_on:
+      worker:
+        condition: service_healthy
 
 volumes:
-  pgdata:
+  db:
+  secrets:

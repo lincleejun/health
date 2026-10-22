@@ -1,35 +1,35 @@
 ---
 name: health
-description: 查询和分析本人的可穿戴设备健康数据（Garmin：心率、睡眠、HRV、压力、身体电量、步数、运动；以后会有 Oura、饮食）。用户问到睡眠、恢复、运动、心率、压力趋势或相关性时使用。
+description: Query and analyze the user's own wearable health data (Garmin: heart rate, resting HR, sleep, HRV, stress, body battery, steps, activities/workouts; Oura and diet later). Use when the user asks about sleep, recovery, exercise, heart rate, stress, trends, or correlations.
 ---
 
-# 个人健康数据库
+# Personal health database
 
-云端 Postgres（Neon），时区 America/Los_Angeles。连接串在项目 `.env` 的 `DATABASE_URL_RO`（只读）。
+Postgres; times are in the database timezone (check with `SHOW timezone`). The read-only connection string is `DATABASE_URL_RO` in the project's `.env`.
 
-## 怎么查
+## How to query
 
-- 有 `health` MCP：先 `schema()` 看表，再 `query(sql)`。只读。
-- 没有 MCP（shell）：在项目目录 `/Users/outman/workspace/personal/health` 下
+- With the `health` MCP: call `schema()` to see the tables, then `query(sql)`. Read-only.
+- Without MCP (shell): from this project's directory run
   `uv run python -c "import health,psycopg;print(psycopg.connect(health.RO_DSN).execute('<SQL>').fetchall())"`
 
-## 先用这些视图
+## Start with these views
 
-| 视图 | 粒度 | 内容 |
+| View | Granularity | Contents |
 |---|---|---|
-| `garmin.day` | 每天 | 步数、卡路里、静息心率、压力均值、身体电量高低、睡眠时长/分期/得分、HRV、训练准备度 |
-| `garmin.halfday` | 每天 AM/PM | 心率、压力、身体电量、步数、呼吸 |
-| `garmin.hourly` | 每小时 | 同上 |
-| `garmin.sample` | 原始采样 | `(ts, metric, value)`，metric ∈ hr / stress / body_battery / steps / respiration |
-| `garmin.activities` | 每次运动 | 类型、时长、距离、心率、训练效果、负荷 |
+| `garmin.day` | Daily | Steps, calories, resting HR, average stress, body battery high/low, sleep duration/stages/score, HRV, training readiness |
+| `garmin.halfday` | Daily AM/PM | Heart rate, stress, body battery, steps, respiration |
+| `garmin.hourly` | Hourly | Same as above |
+| `garmin.sample` | Raw samples | `(ts, metric, value)`, metric ∈ hr / stress / body_battery / steps / respiration |
+| `garmin.activities` | Per workout | Type, duration, distance, heart rate, training effect, load |
 
-视图里没有的字段去原始表找：`garmin.daily(metric, day, data jsonb)`，metric 是
+For fields not in the views, use the raw tables: `garmin.daily(metric, day, data jsonb)`, where metric is
 user_summary / sleep_data / heart_rates / stress_data / steps_data / hrv_data / respiration_data /
-spo2_data / training_readiness / training_status / max_metrics；`garmin.activity(id, start_time, data jsonb)`。
-用 `jsonb_object_keys(data)` 探索结构。
+spo2_data / training_readiness / training_status / max_metrics; and `garmin.activity(id, start_time, data jsonb)`.
+Explore the structure with `jsonb_object_keys(data)`.
 
-## 注意
+## Notes
 
-- 睡眠记在醒来那天（`garmin.day.day` = 起床日期）。
-- 当天数据不完整，每天早上同步一次；做趋势时排除今天。
-- 分析时给出数字和样本天数，别下医学诊断。
+- Sleep is attributed to the wake-up day (`garmin.day.day` = the date you got up).
+- Today's data is incomplete (synced on a schedule, not real-time); exclude today when looking at trends.
+- When analyzing, give the numbers and the number of days in the sample; don't make medical diagnoses.
