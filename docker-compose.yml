@@ -58,6 +58,10 @@ services:
       WORKER_URL: http://worker:8000
     volumes:
       - secrets:/secrets:ro
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/sign-in').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 2s
+      retries: 30
     depends_on:
       worker:
         condition: service_healthy

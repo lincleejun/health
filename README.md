@@ -58,10 +58,10 @@ Requires Docker (Docker Desktop, OrbStack, or Docker Engine with Compose v2).
 
 ```bash
 git clone https://github.com/lincleejun/health.git && cd health
-docker compose up -d
+docker compose up -d --wait
 ```
 
-The first build takes a few minutes. Then open http://localhost:3000 and:
+The first build takes a few minutes; the command returns once everything is up. Then open http://localhost:3000 and:
 
 1. **Sign up.** The first account becomes the owner, and sign-up closes after that.
 2. **Connect Garmin** with your Garmin email and password. Two-factor codes are supported.

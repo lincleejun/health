@@ -48,21 +48,22 @@ Use that port instead of 3000 everywhere below.
 ## 4. Start
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build --wait
 ```
 
-The first run builds two images and takes about 2–5 minutes. Build output may contain `ECONNREFUSED` errors while the web app is compiling. These are expected (there is no database at build time) and can be ignored as long as the build finishes.
+`--wait` returns only after every service is healthy, and exits non-zero if one fails (see Troubleshooting). The first run builds two images and takes a few minutes. Build output may contain `ECONNREFUSED` errors while the web app compiles. They are expected (there is no database at build time) and can be ignored as long as the command exits 0.
 
 ## 5. Verify
 
 ```bash
-docker compose ps
+docker compose ps -a
 ```
 
-Expected: `db` and `worker` are `healthy`, `web` is `running`, and `secrets` has `exited (0)` (it only generates passwords once).
+Expected: `db`, `worker`, and `web` show `(healthy)`; `secrets` shows `Exited (0)` (it only generates passwords on first start).
 
 ```bash
-curl -fsS -o /dev/null -w '%{http_code}\n' http://localhost:3000/sign-in   # expect 200
+curl -fsS -o /dev/null -w '%{http_code}\n' http://localhost:3000/sign-in           # expect 200
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:3000/api/mcp     # expect 401 (MCP is up and requires a token)
 docker compose logs worker | grep -m1 "Worker started"
 ```
 
