@@ -125,3 +125,7 @@ This setup needs no always-on machine:
 - Single user per installation.
 - Not medical advice. The assistant is told to report numbers and sample sizes, not diagnoses.
 - Planned: Oura, nutrition.
+
+## License
+
+[MIT](LICENSE)
