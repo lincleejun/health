@@ -73,7 +73,7 @@ docker compose logs worker | grep -m1 "Worker started"
 |---|---|
 | `docker compose up` hangs on pulling images, or prints `error getting credentials` | The Docker credential helper is stuck. In `~/.docker/config.json`, change `"credsStore": "desktop"` to `"credsStore": "osxkeychain"` (macOS), or delete that line, after backing the file up. Retry. |
 | `port is already allocated` | Go back to step 3 and choose another port. |
-| `worker` not healthy | Run `docker compose logs worker` and `docker compose logs db`, then retry `docker compose up -d`. |
+| `up --wait` exits non-zero, or a service is not `(healthy)` | Run `docker compose logs <service>` (e.g. `worker`, `db`, `web`), fix what it reports, then rerun `docker compose up -d --wait`. |
 | Sign-in or sign-up fails with `Invalid origin`, or OAuth errors | The URL in the browser must match `PUBLIC_URL` (default `http://localhost:<port>`). Use `localhost`, not `127.0.0.1` or a LAN IP; to use another address, set `PUBLIC_URL` to it and rerun `docker compose up -d`. |
 
 ## 7. Hand off to the user
